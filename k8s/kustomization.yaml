@@ -5,3 +5,4 @@ resources:
   - postgres.yaml
   - seed-job.yaml
   - api.yaml
+  - test-job.yaml

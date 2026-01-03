@@ -1,0 +1,34 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rhyolite-test
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-api-ready
+          image: curlimages/curl:8.5.0
+          env:
+            - name: API_HOST
+              value: http://rhyolite-api:8000
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              echo "Waiting for API /healty..."
+              until curl -fsS "$API_HOST/healty" >/dev/null; do
+                echo "...not ready yet"
+                sleep 2
+              done
+              echo "API ready."
+      containers:
+        - name: test
+          image: rhyolite-test:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: API_HOST
+              value: rhyolite-api:8000

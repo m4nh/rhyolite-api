@@ -214,6 +214,11 @@ async def test_server_endpoints_full_lifecycle_single_file_httpx():
     edges_kinds = _complex_edges_kinds(kind_by_base)
 
     async with _client(api_host) as client:
+        # Health check (API up + DB schema ready)
+        r = await client.get("/healty")
+        assert r.status_code == 200, r.text
+        assert r.json().get("ok") is True
+
         # -------------------------
         # Seed Kinds + Edge-Kinds
         # -------------------------

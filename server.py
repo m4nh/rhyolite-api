@@ -14,7 +14,7 @@ import jsonschema
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.requests import Request
 from fastapi.responses import FileResponse
-from sqlalchemy import and_, delete, func, select, cast, Numeric, Boolean
+from sqlalchemy import and_, delete, func, select, cast, Numeric, Boolean, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -129,13 +129,24 @@ def _validate_payload(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import create_engine
+
     database_url = _database_url()
-    app.state.SessionLocal = create_session_factory(database_url)
+    # Create engine and store it for cleanup
+    engine = create_engine(database_url, pool_pre_ping=True)
+    app.state.engine = engine
+    app.state.SessionLocal = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False
+    )
 
     attachments_dir = _attachments_dir()
     attachments_dir.mkdir(parents=True, exist_ok=True)
     app.state.attachments_dir = attachments_dir
     yield
+    # Cleanup on shutdown - dispose of database engine
+    if hasattr(app.state, "engine"):
+        app.state.engine.dispose()
 
 
 app = FastAPI(title="Rhyolite API", lifespan=lifespan)
@@ -148,6 +159,23 @@ def get_db(request: Request):
         yield db
     finally:
         db.close()
+
+
+def _db_schema_ready(db: Session) -> bool:
+    try:
+        # Fast, cheap check: ensure at least the core table exists.
+        return bool(
+            db.execute(text("SELECT to_regclass('public.kinds') IS NOT NULL")).scalar()
+        )
+    except Exception:
+        return False
+
+
+@app.get("/healty")
+def healty(db: Session = Depends(get_db)):
+    if not _db_schema_ready(db):
+        raise HTTPException(status_code=503, detail="Database schema not ready")
+    return {"ok": True, "db_schema_ready": True}
 
 
 def _get_node_or_404(db: Session, node_id: UUID) -> Node:
@@ -587,7 +615,31 @@ def delete_attachment(id: UUID, request: Request, db: Session = Depends(get_db))
 
 if __name__ == "__main__":
     import uvicorn
+    import signal
+    import sys
 
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+
+    # Handle shutdown signals gracefully
+    def signal_handler(signum, frame):
+        print(f"Received signal {signum}, shutting down gracefully...")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        # Configure graceful shutdown
+        access_log=False,  # Reduce logging during shutdown
+        # These settings help with faster shutdown
+        loop="uvloop" if os.getenv("UVLOOP", "true").lower() == "true" else "asyncio",
+        # Server configuration for better shutdown handling
+        server_header=False,
+        date_header=False,
+        # Shutdown timeout
+        timeout_keep_alive=5,
+    )

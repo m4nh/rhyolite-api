@@ -13,6 +13,7 @@ spec:
       labels:
         app: rhyolite-api
     spec:
+      terminationGracePeriodSeconds: 15
       initContainers:
         - name: wait-for-db-seeded
           image: postgres:16-alpine
@@ -82,16 +83,22 @@ spec:
           volumeMounts:
             - name: attachments
               mountPath: /data/attachments
+          # Configure graceful shutdown
+          terminationMessagePolicy: FallbackToLogsOnError
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healty
               port: 8000
             initialDelaySeconds: 3
             periodSeconds: 5
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healty
               port: 8000
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: attachments
           emptyDir: {}
