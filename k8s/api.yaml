@@ -1,0 +1,112 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhyolite-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhyolite-api
+  template:
+    metadata:
+      labels:
+        app: rhyolite-api
+    spec:
+      initContainers:
+        - name: wait-for-db-seeded
+          image: postgres:16-alpine
+          env:
+            - name: DATABASE_HOST
+              value: postgres
+            - name: DATABASE_PORT
+              value: "5432"
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: database
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              echo "Waiting for Postgres + schema..."
+              until [ "$(PGPASSWORD="$DATABASE_PASSWORD" psql -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER" -d "$DATABASE_NAME" -tA -c "SELECT to_regclass('public.kinds') IS NOT NULL;" 2>/dev/null || true)" = "t" ]; do
+                echo "...not ready yet"
+                sleep 2
+              done
+              echo "Database seeded."
+      containers:
+        - name: api
+          image: rhyolite-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8000"
+            - name: ATTACHMENTS_DIR
+              value: /data/attachments
+            - name: DATABASE_HOST
+              value: postgres
+            - name: DATABASE_PORT
+              value: "5432"
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: database
+          volumeMounts:
+            - name: attachments
+              mountPath: /data/attachments
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: attachments
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rhyolite-api
+spec:
+  selector:
+    app: rhyolite-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP

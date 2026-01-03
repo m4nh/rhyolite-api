@@ -1,0 +1,19 @@
+# Prevent local/dev secrets from being baked into the image
+.env
+
+# Python caches / local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Test & coverage artifacts
+.coverage
+htmlcov/
+
+# VCS / editor / OS junk
+.git/
+.DS_Store
+
+# K8s manifests aren't needed in the runtime image
+k8s/
