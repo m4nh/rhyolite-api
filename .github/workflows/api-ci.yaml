@@ -103,7 +103,7 @@ jobs:
         with:
           repository: m4nh/rhyolite-deployment
           token: ${{ secrets.DEPLOY_REPO_TOKEN }}
-          ref: develop
+          ref: main
           path: deployment
 
       - name: Update develop/kustomization.yaml image tag
