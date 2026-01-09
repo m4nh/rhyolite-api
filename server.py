@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 from uuid import UUID, uuid4
 import json
-
+import datetime
 import dotenv
 import jsonschema
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -193,11 +193,12 @@ def _db_schema_ready(db: Session) -> bool:
 def healty(db: Session = Depends(get_db)):
     if not _db_schema_ready(db):
         raise HTTPException(status_code=503, detail="Database schema not ready")
+
     return {
         "ok": True,
         "db_schema_ready": True,
         "allowed_origins": _allow_origins,
-        "time": func.now(),
+        "time": datetime.datetime.utcnow().isoformat(),
     }
 
 
