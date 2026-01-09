@@ -113,11 +113,11 @@ jobs:
           NEW_TAG: ${{ github.sha }}
         run: |
           yq eval -i '(.images[] | select(.name == env(IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
-          git status --porcelain
-          git add develop/kustomization.yaml
-          if ! git diff --cached --quiet; then
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "chore: update ${IMAGE_NAME} tag to ${NEW_TAG}"
-            git push
+          git -C deployment status --porcelain
+          git -C deployment add develop/kustomization.yaml
+          if ! git -C deployment diff --cached --quiet; then
+            git -C deployment -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "chore: update ${IMAGE_NAME} tag to ${NEW_TAG}"
+            git -C deployment push
           else
             echo "No changes to commit"
           fi
