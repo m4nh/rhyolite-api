@@ -220,7 +220,7 @@ def get_kind(name: str, db: Session = Depends(get_db)):
 
 @app.get("/kinds", response_model=List[KindOut])
 def list_kinds(db: Session = Depends(get_db)):
-    return list(db.scalars(select(Kind).order_by(Kind.name)).all())
+    return []  # list(db.scalars(select(Kind).order_by(Kind.name)).all())
 
 
 @app.delete("/kind/{name}")
