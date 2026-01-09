@@ -58,6 +58,33 @@ jobs:
           API_HOST: http://localhost:8000
         run: ./testing.sh
 
-      - name: Build docker image
+      - name: Log in to Docker Hub
         if: success()
-        run: docker build -t rhyolite-api:ci .
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push API image
+        if: success()
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-api:${{ github.sha }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-api:develop
+          platforms: linux/amd64
+
+      - name: Build and push Seed image
+        if: success()
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: seed.Dockerfile
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:${{ github.sha }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:develop
+          platforms: linux/amd64
