@@ -1,0 +1,63 @@
+name: API CI
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure scripts are executable
+        run: chmod +x ./seed.sh ./testing.sh || true
+
+      - name: Seed database
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/test_db
+        run: ./seed.sh
+
+      - name: Start API server
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/test_db
+        run: |
+          nohup python server.py &>/tmp/server.log &
+          # Give server a moment; testing.sh will poll the API endpoint until it's ready.
+          sleep 2
+
+      - name: Run integration tests
+        env:
+          API_HOST: http://localhost:8000
+        run: ./testing.sh
+
+      - name: Build docker image
+        if: success()
+        run: docker build -t rhyolite-api:ci .
