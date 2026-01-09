@@ -92,3 +92,32 @@ jobs:
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:${{ github.sha }}
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:develop
           platforms: linux/amd64
+
+  gitops:
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployment repo
+        uses: actions/checkout@v3
+        with:
+          repository: m4nh/rhyolite-deployment
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          ref: develop
+          path: deployment
+
+      - name: Update develop/kustomization.yaml image tag
+        env:
+          FILE_NAME: deployment/develop/kustomization.yaml
+          IMAGE_NAME: rhyolite-api
+          NEW_TAG: ${{ github.sha }}
+        run: |
+          yq eval -i '(.images[] | select(.name == env(IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
+          git status --porcelain
+          git add develop/kustomization.yaml
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "chore: update ${IMAGE_NAME} tag to ${NEW_TAG}"
+            git push
+          else
+            echo "No changes to commit"
+          fi

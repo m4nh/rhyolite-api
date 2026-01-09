@@ -85,6 +85,11 @@ spec:
                 configMapKeyRef:
                   name: postgres-config
                   key: database
+            - name: CORS_ALLOW_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: rhyolite-api-config
+                  key: CORS_ALLOW_ORIGINS
           volumeMounts:
             - name: attachments
               mountPath: /data/attachments

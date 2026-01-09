@@ -31,7 +31,8 @@ ENV HOST=0.0.0.0 \
     PORT=8000 \
     ATTACHMENTS_DIR=/data/attachments \
     DATABASE_PORT=5432 \
-    DATABASE_DRIVER=postgresql+psycopg
+    DATABASE_DRIVER=postgresql+psycopg \
+    CORS_ALLOW_ORIGINS="*"
 
 RUN mkdir -p "$ATTACHMENTS_DIR"
 
