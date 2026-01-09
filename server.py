@@ -14,6 +14,7 @@ import jsonschema
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.requests import Request
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import and_, delete, func, select, cast, Numeric, Boolean, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -151,6 +152,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Rhyolite API", lifespan=lifespan)
 
+# Configure CORS. Set environment variable `CORS_ALLOW_ORIGINS` as a
+# comma-separated list to override the default (useful in dev).
+_cors_env = os.getenv("CORS_ALLOW_ORIGINS")
+if _cors_env:
+    _allow_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+else:
+    # Default to the common local frontend origin used in this project
+    _allow_origins = ["http://localhost:10000"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 def get_db(request: Request):
     SessionLocal = request.app.state.SessionLocal
@@ -175,7 +193,7 @@ def _db_schema_ready(db: Session) -> bool:
 def healty(db: Session = Depends(get_db)):
     if not _db_schema_ready(db):
         raise HTTPException(status_code=503, detail="Database schema not ready")
-    return {"ok": True, "db_schema_ready": True}
+    return {"ok": True, "db_schema_ready": True, "allowed_origins": _allow_origins}
 
 
 def _get_node_or_404(db: Session, node_id: UUID) -> Node:

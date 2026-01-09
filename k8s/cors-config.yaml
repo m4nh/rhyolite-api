@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rhyolite-api-config
+data:
+  # Comma-separated list of allowed origins for CORS. Override as needed.
+  CORS_ALLOW_ORIGINS: "http://localhost:10000"
