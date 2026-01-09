@@ -4,9 +4,11 @@ on:
   pull_request:
     branches: [develop]
     types: [opened, synchronize, reopened]
+  push:
+    branches: [develop]
 
 jobs:
-  test-and-build:
+  test:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -22,7 +24,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - uses: actions/checkout@v3
 
@@ -50,7 +51,6 @@ jobs:
           DATABASE_URL: postgresql://user:password@localhost:5432/test_db
         run: |
           nohup python server.py &>/tmp/server.log &
-          # Give server a moment; testing.sh will poll the API endpoint until it's ready.
           sleep 2
 
       - name: Run integration tests
@@ -58,15 +58,20 @@ jobs:
           API_HOST: http://localhost:8000
         run: ./testing.sh
 
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
       - name: Log in to Docker Hub
-        if: success()
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push API image
-        if: success()
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -78,7 +83,6 @@ jobs:
           platforms: linux/amd64
 
       - name: Build and push Seed image
-        if: success()
         uses: docker/build-push-action@v4
         with:
           context: .
