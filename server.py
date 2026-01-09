@@ -193,7 +193,12 @@ def _db_schema_ready(db: Session) -> bool:
 def healty(db: Session = Depends(get_db)):
     if not _db_schema_ready(db):
         raise HTTPException(status_code=503, detail="Database schema not ready")
-    return {"ok": True, "db_schema_ready": True, "allowed_origins": _allow_origins}
+    return {
+        "ok": True,
+        "db_schema_ready": True,
+        "allowed_origins": _allow_origins,
+        "time": func.now(),
+    }
 
 
 def _get_node_or_404(db: Session, node_id: UUID) -> Node:
