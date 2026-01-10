@@ -2,6 +2,9 @@
 
 This is the API module of the Rhyolite framework. The API provides an interface to a PostgreSQL database and a lightweight file storage system. The rhyolite framework is a graph-based data wharehouse with based reconfigurable data models.
 
+<details>
+<summary><strong>Datamodel</strong></summary>
+
 ## Datamodel
 
 The Datamodel of Rhyolite is based on the following core entities:
@@ -31,8 +34,12 @@ The Datamodel of Rhyolite is based on the following core entities:
   - `name`: A display name for the attachment (optional when uploading; defaults to the uploaded file's filename).
   - `file_path`: The file system path where the attachment is stored.
   - `created_at`: Timestamp of when the attachment was created.
+</details>
 
-## API 
+<details>
+<summary><strong>API</strong></summary>
+
+## API
 
 
 The API provides endpoints to create, read, update, and delete these entities, as well as to manage relationships and attachments. It also includes validation mechanisms to ensure that nodes conform to their defined kinds and that edges respect the allowed relationships between kinds.
@@ -82,10 +89,13 @@ The API provides endpoints to create, read, update, and delete these entities, a
 * When uploading an attachment, the API stores the file in the file storage system and records the file path in the database. You can provide an optional `name` query parameter when posting an attachment; if omitted, the uploaded file's filename will be used as the attachment name. The API returns the ID of the newly created attachment.
 * When a node is deleted, all associated edges and attachments are also deleted to maintain data integrity.
 
-
-## Implementation details
+#### Implementation details
 
 The Rhyolite API is implemented using FastAPI, a modern web framework for building APIs with Python 3. The database interactions are handled using SQLAlchemy and Pydantic 2 is used for data validation and serialization. The file storage system is implemented using local file storage, but is implemented behind an abstraction layer to allow for easy replacement with other storage backends in the future.
+
+</details>
+
+
 
 ## Kubernetes
 
@@ -103,11 +113,13 @@ The Kubernetes manifests expect these images:
 
 - `rhyolite-api:latest` (built from [Dockerfile](Dockerfile))
 - `rhyolite-seed:latest` (built from [seed.Dockerfile](seed.Dockerfile))
+- `rhyolite-test:latest` (built from [test.Dockerfile](test.Dockerfile))
 
 Build them locally:
 
 - `docker build -t rhyolite-api:latest -f Dockerfile .`
 - `docker build -t rhyolite-seed:latest -f seed.Dockerfile .`
+- `docker build -t rhyolite-test:latest -f test.Dockerfile .`
 
 If you are using a remote cluster (not Docker Desktop / kind / minikube), push these images to a registry and update the image names in the manifests (or via Kustomize).
 
