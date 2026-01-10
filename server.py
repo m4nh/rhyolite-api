@@ -31,6 +31,7 @@ from datamodel import (
     EdgesKindCreate,
     EdgesKindOut,
     SchemaOut,
+    SchemaIn,
     Kind,
     KindCreate,
     KindOut,
@@ -311,6 +312,85 @@ def get_schema(db: Session = Depends(get_db)):
         ).all()
     )
     return {"kinds": kinds, "edges_kinds": edges_kinds}
+
+
+@app.post("/schema")
+def post_schema(body: SchemaIn, db: Session = Depends(get_db)):
+    """Push a full schema definition (kinds + edges_kinds).
+
+    Existing definitions are not replaced; missing kinds/edges_kinds are created.
+    """
+    created_kinds: List[str] = []
+    created_edges: List[Dict[str, str]] = []
+
+    # Create kinds if missing
+    for k in body.kinds:
+        if db.get(Kind, k.name) is None:
+            db.add(Kind(name=k.name, schema=k.schema_))
+            created_kinds.append(k.name)
+    # Commit kinds first so FK checks for edges_kinds succeed
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+    # Create edges_kinds if missing
+    for ek in body.edges_kinds:
+        exists = db.get(
+            EdgesKind,
+            {"from_kind": ek.from_kind, "to_kind": ek.to_kind, "relation": ek.relation},
+        )
+        if exists is None:
+            # Ensure referenced kinds exist
+            if db.get(Kind, ek.from_kind) is None or db.get(Kind, ek.to_kind) is None:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400, detail="Referenced kind not found for edges-kind"
+                )
+            db.add(
+                EdgesKind(
+                    from_kind=ek.from_kind, to_kind=ek.to_kind, relation=ek.relation
+                )
+            )
+            created_edges.append(
+                {
+                    "from_kind": ek.from_kind,
+                    "to_kind": ek.to_kind,
+                    "relation": ek.relation,
+                }
+            )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+    return {
+        "ok": True,
+        "created_kinds": created_kinds,
+        "created_edges_kinds": created_edges,
+    }
+
+
+@app.post("/reset")
+def post_reset(request: Request, db: Session = Depends(get_db)):
+    """Reset database: delete nodes, edges, attachments, edges_kinds and kinds.
+
+    Attachment files are also removed from disk.
+    """
+    # Delete attachment files first
+    attachments = list(db.scalars(select(Attachment)).all())
+    for att in attachments:
+        _delete_file_quietly(request.app.state.attachments_dir / att.file_path)
+
+    # Delete rows in an order that respects FKs
+    db.execute(delete(Edge))
+    db.execute(delete(Attachment))
+    db.execute(delete(Node))
+    db.execute(delete(EdgesKind))
+    db.execute(delete(Kind))
+    db.commit()
+
+    return {"ok": True}
 
 
 @app.get("/edges-kinds/{from_kind}", response_model=List[EdgesKindOut])

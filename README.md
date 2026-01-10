@@ -64,6 +64,9 @@ The API provides endpoints to create, read, update, and delete these entities, a
 - `GET /attachments/{node_id}`: List all attachments for a specified node.
 - `DELETE /attachment/{id}`: Delete an attachment by its ID.
 - `GET /schema`: Retrieve the whole list of Kinds and EdgesKinds as a JSON object.
+- `POST /schema`: Push a full schema definition (Kinds and EdgesKinds) to the server not replacing existing definitions if they already exist.
+- `POST /reset`: Reset the database by deleting all nodes, edges, kinds, edges kinds, and attachments.
+
 
 #### Endpoint special notes
 
