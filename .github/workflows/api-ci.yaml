@@ -92,6 +92,17 @@ jobs:
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:${{ github.sha }}
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:develop
           platforms: linux/amd64
+      
+      - name: Build and push Test image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: test.Dockerfile
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-test:${{ github.sha }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-test:develop
+          platforms: linux/amd64
 
   gitops:
     needs: build-and-push
@@ -111,10 +122,12 @@ jobs:
           FILE_NAME: deployment/develop/kustomization.yaml
           IMAGE_NAME: rhyolite-api
           SEED_IMAGE_NAME: rhyolite-seed
+          TEST_IMAGE_NAME: rhyolite-test
           NEW_TAG: ${{ github.sha }}
         run: |
           yq eval -i '(.images[] | select(.name == env(IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
           yq eval -i '(.images[] | select(.name == env(SEED_IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
+          yq eval -i '(.images[] | select(.name == env(TEST_IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
           git -C deployment status --porcelain
           git -C deployment add develop/kustomization.yaml
           if ! git -C deployment diff --cached --quiet; then
