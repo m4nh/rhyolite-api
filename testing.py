@@ -276,6 +276,20 @@ async def test_server_endpoints_full_lifecycle_single_file_httpx():
         assert r.json()["relation"] == edges_kinds[0]["relation"]
 
         # -------------------------
+        # Schema endpoint (kinds + edges_kinds)
+        # -------------------------
+        r = await client.get("/schema")
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert "kinds" in j and "edges_kinds" in j
+        assert isinstance(j["kinds"], list) and isinstance(j["edges_kinds"], list)
+        listed_names = {x["name"] for x in j["kinds"]}
+        assert {k["name"] for k in kinds}.issubset(listed_names)
+        assert any(
+            x["relation"] == edges_kinds[0]["relation"] for x in j["edges_kinds"]
+        )
+
+        # -------------------------
         # Create Nodes (CRUD)
         # -------------------------
         # Unknown kind -> 400
@@ -700,6 +714,13 @@ async def test_server_endpoints_full_lifecycle_single_file_httpx():
         r = await client.get("/edges-kinds")
         assert r.status_code == 200
         assert r.json() == []
+
+        # Verify /schema reflects deleted edges_kinds
+        r = await client.get("/schema")
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert isinstance(j.get("edges_kinds"), list)
+        assert j.get("edges_kinds") == []
 
         # Create an attachment to verify node delete cleans it up
         extra_bytes = make_random_file(333)

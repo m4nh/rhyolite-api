@@ -30,6 +30,7 @@ from datamodel import (
     EdgesKind,
     EdgesKindCreate,
     EdgesKindOut,
+    SchemaOut,
     Kind,
     KindCreate,
     KindOut,
@@ -293,6 +294,23 @@ def list_edges_kinds(db: Session = Depends(get_db)):
             )
         ).all()
     )
+
+
+@app.get("/schema", response_model=SchemaOut)
+def get_schema(db: Session = Depends(get_db)):
+    """Return all kinds and edges_kinds as a JSON object.
+
+    Results are deterministically ordered for stable tests and docs.
+    """
+    kinds = list(db.scalars(select(Kind).order_by(Kind.name)).all())
+    edges_kinds = list(
+        db.scalars(
+            select(EdgesKind).order_by(
+                EdgesKind.from_kind, EdgesKind.to_kind, EdgesKind.relation
+            )
+        ).all()
+    )
+    return {"kinds": kinds, "edges_kinds": edges_kinds}
 
 
 @app.get("/edges-kinds/{from_kind}", response_model=List[EdgesKindOut])

@@ -190,6 +190,13 @@ class EdgesKindOut(BaseModel):
     relation: str
 
 
+class SchemaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kinds: List[KindOut]
+    edges_kinds: List[EdgesKindOut]
+
+
 class NodeCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
