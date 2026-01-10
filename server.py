@@ -8,12 +8,13 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 from uuid import UUID, uuid4
 import json
-
+import datetime
 import dotenv
 import jsonschema
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.requests import Request
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import and_, delete, func, select, cast, Numeric, Boolean, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -29,6 +30,8 @@ from datamodel import (
     EdgesKind,
     EdgesKindCreate,
     EdgesKindOut,
+    SchemaOut,
+    SchemaIn,
     Kind,
     KindCreate,
     KindOut,
@@ -151,6 +154,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Rhyolite API", lifespan=lifespan)
 
+# Configure CORS. Set environment variable `CORS_ALLOW_ORIGINS` as a
+# comma-separated list to override the default (useful in dev).
+_cors_env = os.getenv("CORS_ALLOW_ORIGINS")
+if _cors_env:
+    _allow_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+else:
+    # Default to the common local frontend origin used in this project
+    _allow_origins = ["http://localhost:10000"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 def get_db(request: Request):
     SessionLocal = request.app.state.SessionLocal
@@ -175,7 +195,13 @@ def _db_schema_ready(db: Session) -> bool:
 def healty(db: Session = Depends(get_db)):
     if not _db_schema_ready(db):
         raise HTTPException(status_code=503, detail="Database schema not ready")
-    return {"ok": True, "db_schema_ready": True}
+
+    return {
+        "ok": True,
+        "db_schema_ready": True,
+        "allowed_origins": _allow_origins,
+        "time": datetime.datetime.utcnow().isoformat(),
+    }
 
 
 def _get_node_or_404(db: Session, node_id: UUID) -> Node:
@@ -269,6 +295,102 @@ def list_edges_kinds(db: Session = Depends(get_db)):
             )
         ).all()
     )
+
+
+@app.get("/schema", response_model=SchemaOut)
+def get_schema(db: Session = Depends(get_db)):
+    """Return all kinds and edges_kinds as a JSON object.
+
+    Results are deterministically ordered for stable tests and docs.
+    """
+    kinds = list(db.scalars(select(Kind).order_by(Kind.name)).all())
+    edges_kinds = list(
+        db.scalars(
+            select(EdgesKind).order_by(
+                EdgesKind.from_kind, EdgesKind.to_kind, EdgesKind.relation
+            )
+        ).all()
+    )
+    return {"kinds": kinds, "edges_kinds": edges_kinds}
+
+
+@app.post("/schema")
+def post_schema(body: SchemaIn, db: Session = Depends(get_db)):
+    """Push a full schema definition (kinds + edges_kinds).
+
+    Existing definitions are not replaced; missing kinds/edges_kinds are created.
+    """
+    created_kinds: List[str] = []
+    created_edges: List[Dict[str, str]] = []
+
+    # Create kinds if missing
+    for k in body.kinds:
+        if db.get(Kind, k.name) is None:
+            db.add(Kind(name=k.name, schema=k.schema_))
+            created_kinds.append(k.name)
+    # Commit kinds first so FK checks for edges_kinds succeed
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+    # Create edges_kinds if missing
+    for ek in body.edges_kinds:
+        exists = db.get(
+            EdgesKind,
+            {"from_kind": ek.from_kind, "to_kind": ek.to_kind, "relation": ek.relation},
+        )
+        if exists is None:
+            # Ensure referenced kinds exist
+            if db.get(Kind, ek.from_kind) is None or db.get(Kind, ek.to_kind) is None:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400, detail="Referenced kind not found for edges-kind"
+                )
+            db.add(
+                EdgesKind(
+                    from_kind=ek.from_kind, to_kind=ek.to_kind, relation=ek.relation
+                )
+            )
+            created_edges.append(
+                {
+                    "from_kind": ek.from_kind,
+                    "to_kind": ek.to_kind,
+                    "relation": ek.relation,
+                }
+            )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+    return {
+        "ok": True,
+        "created_kinds": created_kinds,
+        "created_edges_kinds": created_edges,
+    }
+
+
+@app.post("/reset")
+def post_reset(request: Request, db: Session = Depends(get_db)):
+    """Reset database: delete nodes, edges, attachments, edges_kinds and kinds.
+
+    Attachment files are also removed from disk.
+    """
+    # Delete attachment files first
+    attachments = list(db.scalars(select(Attachment)).all())
+    for att in attachments:
+        _delete_file_quietly(request.app.state.attachments_dir / att.file_path)
+
+    # Delete rows in an order that respects FKs
+    db.execute(delete(Edge))
+    db.execute(delete(Attachment))
+    db.execute(delete(Node))
+    db.execute(delete(EdgesKind))
+    db.execute(delete(Kind))
+    db.commit()
+
+    return {"ok": True}
 
 
 @app.get("/edges-kinds/{from_kind}", response_model=List[EdgesKindOut])

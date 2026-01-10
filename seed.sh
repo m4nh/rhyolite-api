@@ -153,9 +153,9 @@ class_count=${counts%%|*}
 func_count=${counts#*|}
 
 if [ "${class_count:-}" != "0" ] || [ "${func_count:-}" != "0" ]; then
-	echo "ERROR: Refusing to seed: database is not empty (public schema already has objects)." >&2
+	echo "WARNING: Refusing to seed: database is not empty (public schema already has objects)." >&2
 	echo "Found: class_count=${class_count:-?} func_count=${func_count:-?}" >&2
-	exit 1
+	exit 0
 fi
 
 echo "Seeding schema from $SCHEMA_FILE ..." >&2

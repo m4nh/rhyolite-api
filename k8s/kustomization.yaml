@@ -5,4 +5,5 @@ resources:
   - postgres.yaml
   - seed-job.yaml
   - api.yaml
+  - cors-config.yaml
   - test-job.yaml

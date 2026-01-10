@@ -1,0 +1,49 @@
+name: Python Backend CI
+
+on: [push]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    # This creates a network accessible to the steps below
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        # Simple health check to ensure DB is up before steps run
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Seeding Script
+        # Connects to the service container on localhost
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/test_db
+        run: python scripts/seed_database.py
+
+      - name: Run Integration Tests
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/test_db
+        run: pytest tests/integration
+
+      - name: Build and Push Docker Image
+        if: success()
+        # ... (Add your Docker Login / Build / Push steps here)

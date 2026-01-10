@@ -276,6 +276,20 @@ async def test_server_endpoints_full_lifecycle_single_file_httpx():
         assert r.json()["relation"] == edges_kinds[0]["relation"]
 
         # -------------------------
+        # Schema endpoint (kinds + edges_kinds)
+        # -------------------------
+        r = await client.get("/schema")
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert "kinds" in j and "edges_kinds" in j
+        assert isinstance(j["kinds"], list) and isinstance(j["edges_kinds"], list)
+        listed_names = {x["name"] for x in j["kinds"]}
+        assert {k["name"] for k in kinds}.issubset(listed_names)
+        assert any(
+            x["relation"] == edges_kinds[0]["relation"] for x in j["edges_kinds"]
+        )
+
+        # -------------------------
         # Create Nodes (CRUD)
         # -------------------------
         # Unknown kind -> 400
@@ -701,6 +715,13 @@ async def test_server_endpoints_full_lifecycle_single_file_httpx():
         assert r.status_code == 200
         assert r.json() == []
 
+        # Verify /schema reflects deleted edges_kinds
+        r = await client.get("/schema")
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert isinstance(j.get("edges_kinds"), list)
+        assert j.get("edges_kinds") == []
+
         # Create an attachment to verify node delete cleans it up
         extra_bytes = make_random_file(333)
         r = await client.post(
@@ -752,3 +773,51 @@ async def test_server_endpoints_full_lifecycle_single_file_httpx():
         assert r.status_code == 200
         # Shared cluster note: other kinds may exist.
         assert kind_by_base["person"] not in {x["name"] for x in r.json()}
+
+        # -------------------------
+        # Reset endpoint: create temp resources, reset and verify cleared
+        # -------------------------
+        temp_kind_name = f"temp_kind_{run_id}"
+        r = await client.post(
+            "/kind", json={"name": temp_kind_name, "schema": {"type": "object"}}
+        )
+        assert r.status_code == 200
+
+        r = await client.post("/node", json={"kind": temp_kind_name, "payload": {}})
+        assert r.status_code == 200
+        temp_node = r.json()
+
+        extra_bytes = make_random_file(16)
+        r = await client.post(
+            "/attachment",
+            data={"node_id": temp_node["id"]},
+            files={
+                "file": ("tmp.bin", io.BytesIO(extra_bytes), "application/octet-stream")
+            },
+        )
+        assert r.status_code == 200
+        temp_att = r.json()
+
+        # Call reset
+        r = await client.post("/reset")
+        assert r.status_code == 200, r.text
+        assert r.json().get("ok") is True
+
+        # Verify cleared
+        r = await client.get("/kinds")
+        assert r.status_code == 200
+        assert temp_kind_name not in {x["name"] for x in r.json()}
+
+        r = await client.get("/edges-kinds")
+        assert r.status_code == 200
+        assert r.json() == []
+
+        r = await client.post(
+            "/nodes/search",
+            json={"kinds": [], "query": {}, "limit": 10},
+        )
+        assert r.status_code == 200
+        assert r.json() == []
+
+        r = await client.get(f"/attachment/{temp_att['id']}")
+        assert r.status_code == 404

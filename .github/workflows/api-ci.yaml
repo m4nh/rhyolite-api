@@ -1,0 +1,138 @@
+name: API CI
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure scripts are executable
+        run: chmod +x ./seed.sh ./testing.sh || true
+
+      - name: Seed database
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/test_db
+        run: ./seed.sh
+
+      - name: Start API server
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/test_db
+        run: |
+          nohup python server.py &>/tmp/server.log &
+          sleep 2
+
+      - name: Run integration tests
+        env:
+          API_HOST: http://localhost:8000
+        run: ./testing.sh
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-api:${{ github.sha }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-api:develop
+          platforms: linux/amd64
+
+      - name: Build and push Seed image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: seed.Dockerfile
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:${{ github.sha }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-seed:develop
+          platforms: linux/amd64
+      
+      - name: Build and push Test image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: test.Dockerfile
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-test:${{ github.sha }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/rhyolite-test:develop
+          platforms: linux/amd64
+
+  gitops:
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployment repo
+        uses: actions/checkout@v3
+        with:
+          repository: m4nh/rhyolite-deployment
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          ref: main
+          path: deployment
+
+      - name: Update develop/kustomization.yaml image tag
+        env:
+          FILE_NAME: deployment/develop/kustomization.yaml
+          IMAGE_NAME: rhyolite-api
+          SEED_IMAGE_NAME: rhyolite-seed
+          TEST_IMAGE_NAME: rhyolite-test
+          NEW_TAG: ${{ github.sha }}
+        run: |
+          yq eval -i '(.images[] | select(.name == env(IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
+          yq eval -i '(.images[] | select(.name == env(SEED_IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
+          yq eval -i '(.images[] | select(.name == env(TEST_IMAGE_NAME)) .newTag) = env(NEW_TAG)' $FILE_NAME
+          git -C deployment status --porcelain
+          git -C deployment add develop/kustomization.yaml
+          if ! git -C deployment diff --cached --quiet; then
+            git -C deployment -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "chore: update ${IMAGE_NAME} and ${SEED_IMAGE_NAME} tags to ${NEW_TAG}"
+            git -C deployment push
+          else
+            echo "No changes to commit"
+          fi
